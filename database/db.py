@@ -20,15 +20,19 @@ def run_query(query):
 
 def get_schema():
     query = """
-    SELECT table_name, column_name, data_type
+    SELECT table_name, column_name
     FROM information_schema.columns
-    WHERE table_schema = DATABASE()
+    WHERE table_schema = 'practice'
     ORDER BY table_name;
     """
 
     df = pd.read_sql(query, engine)
 
+    # Fix column case issue
+    df.columns = df.columns.str.lower()
+
     schema = ""
+
     for table in df['table_name'].unique():
         columns = df[df['table_name'] == table]['column_name'].tolist()
         schema += f"Table: {table}({', '.join(columns)})\n"

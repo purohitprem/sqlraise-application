@@ -1,54 +1,55 @@
+import google.generativeai as genai
 import os
-from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# ✅ API key load
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+# ✅ Model
+model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+
+# Clean SQL
+def clean_sql(response):
+    return response.replace("```sql", "").replace("```", "").strip()
+
+
+# Generate SQL
 def generate_sql(question, schema):
     prompt = f"""
     You are an expert MySQL developer.
 
-    Rules:
-    - Only generate SELECT queries
-    - Do not use DELETE, UPDATE, DROP
-    - Use correct table and column names
-    - Return only SQL, no explanation
+    STRICT RULES:
+    - Only use tables given in schema
+    - Do NOT guess table names
+    - If question refers to unknown table, return: INVALID_QUERY
+    - Only generate SELECT query
+    - No explanation
 
-    Database Schema:
+    Schema:
     {schema}
 
     Question:
     {question}
+
+    Output:
+    Only SQL or INVALID_QUERY
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+    response = model.generate_content(prompt)
 
-    return response.choices[0].message.content.strip()
+    return clean_sql(response.text)
 
 
+# Explain SQL
 def explain_sql(query):
-    prompt = f"Explain this SQL query in simple words:\n{query}"
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return response.choices[0].message.content
+    response = model.generate_content(f"Explain this SQL:\n{query}")
+    return response.text
 
 
+# Fix SQL
 def fix_sql(query):
-    prompt = f"Fix this SQL query:\n{query}"
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return response.choices[0].message.content
-
+    response = model.generate_content(f"Fix this SQL:\n{query}")
+    return clean_sql(response.text)

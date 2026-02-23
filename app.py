@@ -1,62 +1,72 @@
 import streamlit as st
-from services.ai_service import generate_sql, explain_sql, fix_sql
+from services.ai_service import generate_sql
 from database.db import run_query, get_schema
 from utils.helpers import is_safe_query
 
-st.title("💡 SQL RAISE (MySQL AI Assistant)")
+st.set_page_config(page_title="SQL ChatBot", layout="wide")
 
-# Fetch schema dynamically
+st.title("🤖 SQL AI ChatBot")
+
+# Get DB schema
 schema = get_schema()
 
-tab1, tab2, tab3 = st.tabs(["Generate SQL", "Explain SQL", "Fix SQL"])
+# Chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# --- Generate SQL ---
-with tab1:
-    question = st.text_area("Ask question from your database")
+# Show old messages
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-    if st.button("Generate SQL"):
-        sql = generate_sql(question, schema)
+# User input
+user_input = st.chat_input("Ask about your database...")
 
-        st.subheader("Generated SQL")
-        st.code(sql, language="sql")
+if user_input:
 
+    # Show user message
+    st.chat_message("user").markdown(user_input)
+
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    with st.spinner("Thinking..."):
+
+        # 🔥 Step 1: Generate SQL
+        sql = generate_sql(user_input, schema)
+
+        # 🔥 Step 2: Safety check
         if not is_safe_query(sql):
-            st.error("❌ Unsafe query detected! Only SELECT queries are allowed.")
+            response = "❌ Unsafe query detected!"
         else:
+            # 🔥 Step 3: Run query
             df, error = run_query(sql)
 
             if error:
-                st.error(error)
+                response = f"❌ Error: {error}"
             else:
-                st.dataframe(df)
-        
-        if not sql.lower().startswith("select"):
-            st.error("Only SELECT queries are allowed!")
+                response = f"### 🧠 SQL\n```sql\n{sql}\n```"
 
-def is_safe_query(query):
-    dangerous = ["DROP", "DELETE", "UPDATE", "ALTER", "INSERT", "TRUNCATE"]
+    # Show assistant message
+    with st.chat_message("assistant"):
+        st.markdown(response)
 
-    query_upper = query.upper()
+        # 🔥 Show data separately
+        if "df" in locals() and error is None:
+            st.dataframe(df, use_container_width=True)
 
-    for word in dangerous:
-        if word in query_upper:
-            return False
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response
+    })
 
-    return query_upper.strip().startswith("SELECT")
+    sql = generate_sql(user_input, schema)
 
+    # ❗ NEW CHECK
+    if "INVALID_QUERY" in sql:
+        st.error("❌ This data does not exist in database!")
 
-# --- Explain SQL ---
-with tab2:
-    query = st.text_area("Enter SQL query")
-
-    if st.button("Explain"):
-        explanation = explain_sql(query)
-        st.write(explanation)
-
-# --- Fix SQL ---
-with tab3:
-    bad_query = st.text_area("Enter wrong SQL")
-
-    if st.button("Fix Query"):
-        fixed = fix_sql(bad_query)
-        st.code(fixed, language="sql")
+    if not is_valid_table(sql, schema):
+        st.error("❌ Invalid table used in query")
